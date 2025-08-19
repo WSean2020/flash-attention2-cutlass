@@ -46,7 +46,6 @@ ext_modules.append(
         sources=[
             "csrc/attention_api.cpp",
             "csrc/flash_attention.cu",
-            "csrc/flash_api.cpp",
         ],
         extra_compile_args={
             # add c compile flags
@@ -107,7 +106,3 @@ setup(
         "ninja",
     ],
 )
-
-
-
-

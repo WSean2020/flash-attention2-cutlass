@@ -1,4 +1,167 @@
 #pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <torch/extension.h>
+
+// NOTE:tensor malloc as device before we call
+// e.g. data.to("cuda") in python
+#define CHECK_CUDA(x)                                                          \
+  TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
+#define CHECK_CONTIGUOUS(x)                                                    \
+  TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
+#define CHECK_INPUT(x)                                                         \
+  CHECK_CUDA(x);                                                               \
+  CHECK_CONTIGUOUS(x)
+
+#define CUDA_ERROR_CHECK(condition)                                            \
+  do {                                                                         \
+    cudaError_t error = condition;                                             \
+    if (error != cudaSuccess) {                                                \
+      printf("CUDA_CHECK error in line %d of file %s \
+              : %s \n",                                                        \
+             __LINE__, __FILE__, cudaGetErrorString(error));                   \
+      exit(EXIT_FAILURE);                                                      \
+    }                                                                          \
+  } while (0)
+
+
+// Inspired by
+// https://github.com/NVIDIA/DALI/blob/main/include/dali/core/static_switch.h
+// and https://github.com/pytorch/pytorch/blob/master/aten/src/ATen/Dispatch.h
+/// @param COND       - a boolean expression to switch by
+/// @param CONST_NAME - a name given for the constexpr bool variable.
+/// @param ...       - code to execute for true and false
+///
+/// Usage:
+/// ```
+/// BOOL_SWITCH(flag, BoolConst, [&] {
+///     some_function<BoolConst>(...);
+/// });
+/// ```
+#define BOOL_SWITCH(COND, CONST_NAME, ...)      \
+  [&] {                                         \
+    if (COND) {                                 \
+      constexpr static bool CONST_NAME = true;  \
+      return __VA_ARGS__();                     \
+    } else {                                    \
+      constexpr static bool CONST_NAME = false; \
+      return __VA_ARGS__();                     \
+    }                                           \
+  }()
+
+#define FP16_SWITCH(COND, ...)               \
+  [&] {                                      \
+    if (COND) {                              \
+      using elem_type = cutlass::half_t;     \
+      return __VA_ARGS__();                  \
+    } else {                                 \
+      using elem_type = cutlass::bfloat16_t; \
+      return __VA_ARGS__();                  \
+    }                                        \
+  }()
+
+#define FWD_HEADDIM_SWITCH(HEADDIM, ...)   \
+  [&] {                                    \
+    if (HEADDIM <= 32) {                   \
+      constexpr static int kHeadDim = 32;  \
+      return __VA_ARGS__();                \
+    } else if (HEADDIM <= 64) {            \
+      constexpr static int kHeadDim = 64;  \
+      return __VA_ARGS__();                \
+    } else if (HEADDIM <= 96) {            \
+      constexpr static int kHeadDim = 96;  \
+      return __VA_ARGS__();                \
+    } else if (HEADDIM <= 128) {           \
+      constexpr static int kHeadDim = 128; \
+      return __VA_ARGS__();                \
+    } else if (HEADDIM <= 160) {           \
+      constexpr static int kHeadDim = 160; \
+      return __VA_ARGS__();                \
+    } else if (HEADDIM <= 192) {           \
+      constexpr static int kHeadDim = 192; \
+      return __VA_ARGS__();                \
+    } else if (HEADDIM <= 224) {           \
+      constexpr static int kHeadDim = 224; \
+      return __VA_ARGS__();                \
+    } else if (HEADDIM <= 256) {           \
+      constexpr static int kHeadDim = 256; \
+      return __VA_ARGS__();                \
+    }                                      \
+  }()
+
+#define WARP_SWITCH(COND, CONST_NAME, ...)      \
+  [&] {                                         \
+    if (COND == 4) {                            \
+      constexpr static int CONST_NAME = 4;      \
+      return __VA_ARGS__();                     \
+    } else if (COND == 8) {                     \
+      constexpr static int CONST_NAME = 8;      \
+      return __VA_ARGS__();                     \
+    } else {                                    \
+      constexpr static int CONST_NAME = 2;      \
+      return __VA_ARGS__();                     \
+    }                                           \
+  }()
+
+#define BLOCKM_SWITCH(COND, CONST_NAME, ...)     \
+  [&] {                                         \
+    if (COND == 64) {                    \
+      constexpr static int CONST_NAME = 64;     \
+      return __VA_ARGS__();                     \
+    } else if (COND == 128) {                   \
+      constexpr static int CONST_NAME = 128;    \
+      return __VA_ARGS__();                     \
+    } else if (COND == 256) {                   \
+      constexpr static int CONST_NAME = 256;    \
+      return __VA_ARGS__();                     \
+    } else {                                    \
+      constexpr static int CONST_NAME = 64;     \
+      return __VA_ARGS__();                     \
+    }                                           \
+  }()
+
+#define BLOCKN_SWITCH(COND, CONST_NAME, ...)     \
+  [&] {                                         \
+    if (COND == 32) {                           \
+      constexpr static int CONST_NAME = 32;     \
+      return __VA_ARGS__();                     \
+    } else if (COND == 64) {                    \
+      constexpr static int CONST_NAME = 64;     \
+      return __VA_ARGS__();                     \
+    } else if (COND == 128) {                   \
+      constexpr static int CONST_NAME = 128;    \
+      return __VA_ARGS__();                     \
+    } else if (COND == 256) {                   \
+      constexpr static int CONST_NAME = 256;    \
+      return __VA_ARGS__();                     \
+    } else {                                    \
+      constexpr static int CONST_NAME = 64;     \
+      return __VA_ARGS__();                     \
+    }                                           \
+  }()
+
+#define STAGE_SWITCH(COND, CONST_NAME, ...)     \
+  [&] {                                         \
+    if (COND == 2) {                            \
+      constexpr static int CONST_NAME = 2;      \
+      return __VA_ARGS__();                     \
+    } else if (COND == 3) {                     \
+      constexpr static int CONST_NAME = 3;      \
+      return __VA_ARGS__();                     \
+    } else if (COND == 4) {                     \
+      constexpr static int CONST_NAME = 4;      \
+      return __VA_ARGS__();                     \
+    } else if (COND == 5) {                     \
+      constexpr static int CONST_NAME = 5;      \
+      return __VA_ARGS__();                     \
+    } else {                                    \
+      constexpr static int CONST_NAME = 2;      \
+      return __VA_ARGS__();                     \
+    }                                           \
+  }()
+
+
 template<typename T>
 struct MaxOp {
 __device__ inline T operator()(T const & x, T const & y) { return x > y ? x : y; }
@@ -96,4 +259,3 @@ __device__ inline void reduce_sum(Tensor<Engine0, Layout0> const& tensor, Tensor
     SumOp<float> sum_op;
     reduce_(tensor, sum, sum_op);
 }
-

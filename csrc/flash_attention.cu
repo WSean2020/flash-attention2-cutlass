@@ -1,20 +1,21 @@
-#include "attention_api.cuh"
 #include <cassert>
 #include <cmath>
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <iostream>
 #include <stdio.h>
-#include <cutlass/numeric_conversion.h>
-#include <cutlass/numeric_types.h>
-#include <torch/extension.h>
-#include <torch/python.h>
 #include <vector>
 
-#include "static_switch.h"
+#include <torch/extension.h>
+#include <torch/python.h>
+
+#include <cutlass/numeric_conversion.h>
+#include <cutlass/numeric_types.h>
+
 #include "kernel_traits.h"
 #include "flash.h"
 #include "utils.h"
+
 
 namespace flash {
 

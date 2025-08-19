@@ -64,10 +64,14 @@ def main(bs=1, head=64, seq_len=4096, dim=64):
     official_ref_time = run_benchmark(epoch, warmup, flash_attn_func_offical, fq, fk, fv, causal=is_causal, softmax_scale=sm_scale)
     official_result = flash_attn_func_offical(fq, fk, fv, causal=is_causal, softmax_scale=sm_scale)
     
-    print(f"bs:{bs}, head:{head}, seq_len:{seq_len}, dim:{dim}        \
-            baseline:{base_time * 1000 / epoch} ms        \
-            flash2_cutlass_fp16:{official_ref_time * 1000 / epoch} ms")
-
+    print(
+        f"bs:{bs:<3}  head:{head:<3}  seq_len:{seq_len:<5}  dim:{dim:<4} | "
+        f"Torch: {base_time * 1000 / epoch:>8.3f} ms | "
+        f"vllm_flash_attn_fp16: {official_ref_time * 1000 / epoch:>8.3f} ms | "
+        f"Custom_FA2_cutlass: {flash2_time * 1000 / epoch:>8.3f} ms "
+        f"({official_ref_time / flash2_time:.2f}x)"
+    )
+    
     assert torch.allclose(baseline, flash2_cutlass_ref, rtol=0, atol=1e-2)
 
 
@@ -78,7 +82,4 @@ if __name__ == "__main__":
             for head in [8, 16, 32]:
                 for seq_len in [64, 1024, 4096]:
                     for dim in [32, 64]:
-                        
                         main(bs, head, seq_len, dim)
-
-
