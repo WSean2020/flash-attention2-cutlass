@@ -1,10 +1,15 @@
 import torch
 import math
 from attention_cutlass import flash_attention_v2_cutlass
-import math
 import time
-# offical flash attention implement
-from vllm_flash_attn import flash_attn_func as flash_attn_func_offical
+
+# Try to import vllm flash attention, set flag based on availability
+try:
+    from vllm_flash_attn import flash_attn_func as flash_attn_func_offical
+    HAS_VLLM = True
+except ImportError:
+    HAS_VLLM = False
+    print("vllm_flash_attn not found, skipping vllm benchmarks")
 
 '''
 simple attention implement without multi head
@@ -51,26 +56,33 @@ def main(bs=1, head=64, seq_len=4096, dim=64):
     is_causal = True
     sm_scale = 1.0 / math.sqrt(SEQLEN)
 
-
     base_time = run_benchmark(epoch, warmup, self_attention, q, k, v, causal=is_causal, sm_scale=sm_scale)
     baseline = self_attention(q, k, v, causal=is_causal, sm_scale=sm_scale)
 
     flash2_time = run_benchmark(epoch, warmup, flash_attention_v2_cutlass, q, k, v, is_causal, sm_scale)
     flash2_cutlass_ref = flash_attention_v2_cutlass(q, k, v, is_causal, sm_scale)[0]
 
-    fq = q.transpose(1, 2)
-    fk = k.transpose(1, 2)
-    fv = v.transpose(1, 2)
-    official_ref_time = run_benchmark(epoch, warmup, flash_attn_func_offical, fq, fk, fv, causal=is_causal, softmax_scale=sm_scale)
-    official_result = flash_attn_func_offical(fq, fk, fv, causal=is_causal, softmax_scale=sm_scale)
-    
-    print(
-        f"bs:{bs:<3}  head:{head:<3}  seq_len:{seq_len:<5}  dim:{dim:<4} | "
-        f"Torch: {base_time * 1000 / epoch:>8.3f} ms | "
-        f"vllm_flash_attn_fp16: {official_ref_time * 1000 / epoch:>8.3f} ms | "
-        f"Custom_FA2_cutlass: {flash2_time * 1000 / epoch:>8.3f} ms "
-        f"({official_ref_time / flash2_time:.2f}x)"
-    )
+    if HAS_VLLM:
+        fq = q.transpose(1, 2)
+        fk = k.transpose(1, 2)
+        fv = v.transpose(1, 2)
+        official_ref_time = run_benchmark(epoch, warmup, flash_attn_func_offical, fq, fk, fv, causal=is_causal, softmax_scale=sm_scale)
+        official_result = flash_attn_func_offical(fq, fk, fv, causal=is_causal, softmax_scale=sm_scale)
+        
+        print(
+            f"bs:{bs:<3}  head:{head:<3}  seq_len:{seq_len:<5}  dim:{dim:<4} | "
+            f"Torch: {base_time * 1000 / epoch:>8.3f} ms | "
+            f"vllm_flash_attn_fp16: {official_ref_time * 1000 / epoch:>8.3f} ms | "
+            f"Custom_FA2_cutlass: {flash2_time * 1000 / epoch:>8.3f} ms "
+            f"({official_ref_time / flash2_time:.2f}x)"
+        )
+    else:
+        print(
+            f"bs:{bs:<3}  head:{head:<3}  seq_len:{seq_len:<5}  dim:{dim:<4} | "
+            f"Torch: {base_time * 1000 / epoch:>8.3f} ms | "
+            f"Custom_FA2_cutlass: {flash2_time * 1000 / epoch:>8.3f} ms "
+            f"({base_time / flash2_time:.2f}x)"
+        )
     
     assert torch.allclose(baseline, flash2_cutlass_ref, rtol=0, atol=1e-2)
 
